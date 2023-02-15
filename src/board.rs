@@ -50,12 +50,7 @@ impl From<(usize, usize)> for Position {
     }
 }
 
-impl From<usize> for Position {
-    fn from(u: usize) -> Self {
-        Position { row: u, column: u }
-    }
-}
-
+#[derive(Clone)]
 pub struct Shape {
     pub pattern: Vec<Position>,
     pub offset: Option<Position>,
@@ -80,6 +75,32 @@ impl Shape {
             });
         }
         cells
+    }
+}
+
+impl Widget for Shape {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let mut cells = vec![vec![Cell::Dead; area.width as usize]; area.height as usize];
+        for pos in self.pattern {
+            cells[pos.row + 1][pos.column + 6] = Cell::Alive;
+        }
+
+        for x in 10..(area.width - 14) {
+            for y in 0..area.height {
+                if x % 2 == 0 {
+                    buf.get_mut(area.left() + x, area.top() + y)
+                        .clone_from(&cells[y as usize][((x - 6) / 2) as usize].into());
+                } else {
+                    buf.get_mut(area.left() + x, area.top() + y)
+                        .set_symbol(tui::symbols::line::VERTICAL)
+                        .set_fg(Color::Black)
+                        .set_style(Style {
+                            add_modifier: style::Modifier::DIM,
+                            ..Default::default()
+                        });
+                }
+            }
+        }
     }
 }
 
@@ -141,9 +162,10 @@ impl Board {
         }
     }
 
-    pub fn add_shape(&mut self, pos: Position) {
-        let shape = Shape::new(Shape::ACORN.to_vec(), Some(pos));
-        shape
+    pub fn add_shape(&mut self, pos: Position, shape: Shape) {
+        let mut positioned_shape = shape.clone();
+        positioned_shape.offset = Some(pos);
+        positioned_shape
             .get_cells()
             .into_iter()
             .for_each(|p| self.cells[p.row][p.column] = Cell::Alive);
@@ -194,6 +216,77 @@ impl Widget for Board {
                 if x % 2 == 0 {
                     buf.get_mut(area.left() + x, area.top() + y)
                         .clone_from(&content_cells[y as usize][(x / 2) as usize]);
+                } else {
+                    buf.get_mut(area.left() + x, area.top() + y)
+                        .set_symbol(tui::symbols::line::VERTICAL)
+                        .set_fg(Color::Black)
+                        .set_style(Style {
+                            add_modifier: style::Modifier::DIM,
+                            ..Default::default()
+                        });
+                }
+            }
+        }
+    }
+}
+
+pub enum ControlToggle {
+    Play,
+    Pause,
+}
+
+impl ControlToggle {
+    const PLAY: [(usize, usize); 12] = [
+        (0, 2),
+        (1, 2),
+        (1, 3),
+        (2, 2),
+        (2, 3),
+        (2, 4),
+        (3, 2),
+        (3, 3),
+        (3, 4),
+        (4, 2),
+        (4, 3),
+        (5, 2),
+    ];
+    const PAUSE: [(usize, usize); 16] = [
+        (1, 1),
+        (1, 2),
+        (1, 4),
+        (1, 5),
+        (2, 1),
+        (2, 2),
+        (2, 4),
+        (2, 5),
+        (3, 1),
+        (3, 2),
+        (3, 4),
+        (3, 5),
+        (4, 1),
+        (4, 2),
+        (4, 4),
+        (4, 5),
+    ];
+}
+
+impl Widget for ControlToggle {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let shape = match self {
+            ControlToggle::Play => Shape::new(ControlToggle::PLAY.to_vec(), None),
+            ControlToggle::Pause => Shape::new(ControlToggle::PAUSE.to_vec(), None),
+        };
+        let mut cells = vec![vec![Cell::Dead; area.width as usize]; area.height as usize];
+        shape
+            .pattern
+            .into_iter()
+            .for_each(|pos| cells[pos.row][pos.column + 4] = Cell::Alive);
+
+        for x in 12..42 {
+            for y in 0..area.height {
+                if x % 2 == 0 {
+                    buf.get_mut(area.left() + x, area.top() + y)
+                        .clone_from(&cells[y as usize][((x - 12) / 2) as usize].into());
                 } else {
                     buf.get_mut(area.left() + x, area.top() + y)
                         .set_symbol(tui::symbols::line::VERTICAL)

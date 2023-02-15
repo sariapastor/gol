@@ -46,6 +46,12 @@ fn main() -> Result<(), io::Error> {
     };
 
     let mut game_board = Board::new(args.columns, args.rows, init);
+    let preset_shapes = [
+        Shape::new(Shape::ACORN.to_vec(), None),
+        Shape::new(Shape::GLIDER.to_vec(), None),
+        Shape::new(Shape::R_PENTOMINO.to_vec(), None),
+    ];
+    let mut current_shape_index = 0;
 
     // setup terminal
     enable_raw_mode()?;
@@ -56,6 +62,10 @@ fn main() -> Result<(), io::Error> {
     let mut paused = true;
 
     loop {
+        let control_toggle = match paused {
+            true => ControlToggle::Play,
+            false => ControlToggle::Pause,
+        };
         let term_rect = terminal.size().expect("Error getting terminal dimensions");
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
@@ -83,6 +93,16 @@ fn main() -> Result<(), io::Error> {
                         game_board.tick()
                     }
                 }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Tab,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                })
+                | Event::Key(KeyEvent {
+                    code: KeyCode::Char('s'),
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                }) => current_shape_index = (current_shape_index + 1) % preset_shapes.len(),
                 Event::Mouse(MouseEvent {
                     kind: MouseEventKind::Down(MouseButton::Left),
                     column,
@@ -100,7 +120,7 @@ fn main() -> Result<(), io::Error> {
                     modifiers: KeyModifiers::ALT,
                 }) => {
                     if let Ok(position) = game_board.in_bounds(row, column, term_rect) {
-                        game_board.add_shape(position);
+                        game_board.add_shape(position, preset_shapes[current_shape_index].clone());
                     }
                 }
                 _ => (),
@@ -112,7 +132,12 @@ fn main() -> Result<(), io::Error> {
                 frame.render_widget(layout.screen_border, frame.size());
                 frame.render_widget(layout.controls_border, layout.controls_row);
                 frame.render_widget(board, layout.game_area);
-                frame.render_widget(layout.controls, layout.controls_area);
+                frame.render_widget(layout.controls_list, layout.controls_list_area);
+                frame.render_widget(
+                    preset_shapes[current_shape_index].clone(),
+                    layout.shape_display_area,
+                );
+                frame.render_widget(control_toggle, layout.controls_toggle_area);
             })?;
             if !paused {
                 game_board.tick();
