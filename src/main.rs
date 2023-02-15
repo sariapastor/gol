@@ -46,12 +46,13 @@ fn main() -> Result<(), io::Error> {
     };
 
     let mut game_board = Board::new(args.columns, args.rows, init);
-    let preset_shapes = [
+    let mut paused = true;
+    let shape_presets = [
         Shape::new(Shape::ACORN.to_vec(), None),
         Shape::new(Shape::GLIDER.to_vec(), None),
         Shape::new(Shape::R_PENTOMINO.to_vec(), None),
     ];
-    let mut current_shape_index = 0;
+    let mut preset_index = 0;
 
     // setup terminal
     enable_raw_mode()?;
@@ -59,7 +60,6 @@ fn main() -> Result<(), io::Error> {
     execute!(stdout, EnableMouseCapture, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    let mut paused = true;
 
     loop {
         let control_toggle = match paused {
@@ -102,7 +102,7 @@ fn main() -> Result<(), io::Error> {
                     code: KeyCode::Char('s'),
                     modifiers: KeyModifiers::NONE,
                     ..
-                }) => current_shape_index = (current_shape_index + 1) % preset_shapes.len(),
+                }) => preset_index = (preset_index + 1) % shape_presets.len(),
                 Event::Mouse(MouseEvent {
                     kind: MouseEventKind::Down(MouseButton::Left),
                     column,
@@ -120,7 +120,7 @@ fn main() -> Result<(), io::Error> {
                     modifiers: KeyModifiers::ALT,
                 }) => {
                     if let Ok(position) = game_board.in_bounds(row, column, term_rect) {
-                        game_board.add_shape(position, preset_shapes[current_shape_index].clone());
+                        game_board.add_shape(position, shape_presets[preset_index].clone());
                     }
                 }
                 _ => (),
@@ -134,7 +134,7 @@ fn main() -> Result<(), io::Error> {
                 frame.render_widget(board, layout.game_area);
                 frame.render_widget(layout.controls_list, layout.controls_list_area);
                 frame.render_widget(
-                    preset_shapes[current_shape_index].clone(),
+                    shape_presets[preset_index].clone(),
                     layout.shape_display_area,
                 );
                 frame.render_widget(control_toggle, layout.controls_toggle_area);
@@ -162,27 +162,27 @@ fn main() -> Result<(), io::Error> {
 mod test {
     use super::*;
 
-    fn input_spaceship() -> Board {
-        let init = [(1, 2), (2, 3), (3, 1), (3, 2), (3, 3)]
+    fn input_shape() -> Board {
+        let shape = [(1, 2), (2, 3), (3, 1), (3, 2), (3, 3)]
             .into_iter()
             .map(|(row, column)| Position { row, column })
             .collect();
-        Board::new(6, 6, Some(init))
+        Board::new(6, 6, Some(shape))
     }
 
-    fn expected_spaceship() -> Board {
-        let init = [(2, 1), (2, 3), (3, 2), (3, 3), (4, 2)]
+    fn expected_shape() -> Board {
+        let shape = [(2, 1), (2, 3), (3, 2), (3, 3), (4, 2)]
             .into_iter()
             .map(|(row, column)| Position { row, column })
             .collect();
-        Board::new(6, 6, Some(init))
+        Board::new(6, 6, Some(shape))
     }
 
     #[test]
     fn test_tick() {
-        let mut input = input_spaceship();
+        let mut input = input_shape();
         input.tick();
-        let expected = expected_spaceship();
+        let expected = expected_shape();
         assert_eq!(input.cells, expected.cells);
     }
 }
