@@ -1,20 +1,17 @@
+mod game;
+mod input;
+mod ui;
+
 use clap::Parser;
 use crossterm::{
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
-        MouseButton, MouseEvent, MouseEventKind,
-    },
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::{io, time::Duration};
+use game::{Board, GolState, Shape};
+use std::{io, sync::mpsc::channel, thread, time::Duration};
 use tui::{backend::CrosstermBackend, Terminal};
-
-mod board;
-mod layout;
-
-use board::*;
-use layout::*;
+use ui::{ControlToggle, GolUi};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -29,30 +26,27 @@ struct Args {
 }
 
 fn main() -> Result<(), io::Error> {
-    // configure board
+    // configure
     let args = Args::parse();
-    let offset: Option<Position> = if args.offset != 0 {
-        let offset_row = args.offset % args.rows as usize;
-        let offset_col = args.offset % args.columns as usize;
-        Some((offset_row, offset_col).into())
-    } else {
-        None
-    };
+
     let init = match args.shape.as_str() {
-        "acorn" => Some(Shape::new(Shape::ACORN.to_vec(), offset).get_cells()),
-        "glider" => Some(Shape::new(Shape::GLIDER.to_vec(), offset).get_cells()),
-        "rpentomino" => Some(Shape::new(Shape::R_PENTOMINO.to_vec(), offset).get_cells()),
+        "acorn" => Some(Shape::ACORN.to_vec()),
+        "glider" => Some(Shape::GLIDER.to_vec()),
+        "rpentomino" => Some(Shape::R_PENTOMINO.to_vec()),
         _ => None,
     };
+    let board = Board::new(args.columns, args.rows, init, args.offset);
 
-    let mut game_board = Board::new(args.columns, args.rows, init);
-    let mut paused = true;
-    let shape_presets = [
-        Shape::new(Shape::ACORN.to_vec(), None),
-        Shape::new(Shape::GLIDER.to_vec(), None),
-        Shape::new(Shape::R_PENTOMINO.to_vec(), None),
-    ];
-    let mut preset_index = 0;
+    // listen for user input
+    let (tx, rx) = channel::<Event>();
+
+    thread::spawn(move || loop {
+        if event::poll(Duration::from_millis(500)).unwrap_or(false) {
+            let _ = tx.send(
+                event::read().expect("Should have been an event to read since poll returned true."),
+            );
+        }
+    });
 
     // setup terminal
     enable_raw_mode()?;
@@ -61,92 +55,44 @@ fn main() -> Result<(), io::Error> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // initialize game state
+    let term_rect = terminal.size().expect("Error getting terminal dimensions");
+    let mut game_state = GolState::new(board, term_rect);
+
     loop {
-        let control_toggle = match paused {
-            true => ControlToggle::Play,
-            false => ControlToggle::Pause,
-        };
-        let term_rect = terminal.size().expect("Error getting terminal dimensions");
-        if event::poll(Duration::from_millis(50))? {
-            match event::read()? {
-                Event::Key(KeyEvent {
-                    code: KeyCode::Esc,
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                })
-                | Event::Key(KeyEvent {
-                    code: KeyCode::Char('q'),
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                }) => break,
-                Event::Key(KeyEvent {
-                    code: KeyCode::Char(' '),
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                }) => paused = !paused,
-                Event::Key(KeyEvent {
-                    code: KeyCode::Right,
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                }) => {
-                    if paused {
-                        game_board.tick()
-                    }
-                }
-                Event::Key(KeyEvent {
-                    code: KeyCode::Tab,
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                })
-                | Event::Key(KeyEvent {
-                    code: KeyCode::Char('s'),
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                }) => preset_index = (preset_index + 1) % shape_presets.len(),
-                Event::Mouse(MouseEvent {
-                    kind: MouseEventKind::Down(MouseButton::Left),
-                    column,
-                    row,
-                    modifiers: KeyModifiers::NONE,
-                }) => {
-                    if let Ok(position) = game_board.in_bounds(row, column, term_rect) {
-                        game_board.flip_cell(position);
-                    }
-                }
-                Event::Mouse(MouseEvent {
-                    kind: MouseEventKind::Down(MouseButton::Left),
-                    column,
-                    row,
-                    modifiers: KeyModifiers::ALT,
-                }) => {
-                    if let Ok(position) = game_board.in_bounds(row, column, term_rect) {
-                        game_board.add_shape(position, shape_presets[preset_index].clone());
-                    }
-                }
-                _ => (),
+        if let Ok(user_event) = rx.try_recv() {
+            if input::process_input(user_event, &mut game_state).is_err() {
+                break;
             }
         } else {
             terminal.draw(|frame| {
-                let board = game_board.clone();
+                let board = game_state.game_board.clone();
                 let layout = GolUi::new(frame.size(), &board);
                 frame.render_widget(layout.screen_border, frame.size());
                 frame.render_widget(layout.controls_border, layout.controls_row);
                 frame.render_widget(board, layout.game_area);
                 frame.render_widget(layout.controls_list, layout.controls_list_area);
                 frame.render_widget(
-                    shape_presets[preset_index].clone(),
+                    // shape_presets[preset_index].clone(),
+                    game_state.current_preset(),
                     layout.shape_display_area,
                 );
-                frame.render_widget(control_toggle, layout.controls_toggle_area);
+                frame.render_widget(
+                    match game_state.paused {
+                        true => ControlToggle::Play,
+                        false => ControlToggle::Pause,
+                    },
+                    layout.controls_toggle_area,
+                );
             })?;
-            if !paused {
-                game_board.tick();
+            if !game_state.paused {
+                game_state.game_board.tick();
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
     }
 
-    // restore terminal
+    // restore terminal on exit
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -156,33 +102,4 @@ fn main() -> Result<(), io::Error> {
     terminal.show_cursor()?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    fn input_shape() -> Board {
-        let shape = [(1, 2), (2, 3), (3, 1), (3, 2), (3, 3)]
-            .into_iter()
-            .map(|(row, column)| Position { row, column })
-            .collect();
-        Board::new(6, 6, Some(shape))
-    }
-
-    fn expected_shape() -> Board {
-        let shape = [(2, 1), (2, 3), (3, 2), (3, 3), (4, 2)]
-            .into_iter()
-            .map(|(row, column)| Position { row, column })
-            .collect();
-        Board::new(6, 6, Some(shape))
-    }
-
-    #[test]
-    fn test_tick() {
-        let mut input = input_shape();
-        input.tick();
-        let expected = expected_shape();
-        assert_eq!(input.cells, expected.cells);
-    }
 }
