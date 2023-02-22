@@ -53,9 +53,9 @@ impl GolUi<'_> {
 
         let controls_main_column_rows = Layout::default()
             .constraints([
-                Constraint::Min(2),
-                Constraint::Length(6),
-                Constraint::Min(2),
+                Constraint::Min(1),
+                Constraint::Length(8),
+                Constraint::Min(1),
             ])
             .split(controls_row_columns[1]);
 
@@ -86,12 +86,14 @@ impl GolUi<'_> {
             .border_style(Style::default().fg(Color::Green));
 
         let controls_list = List::new(vec![
-            ListItem::new("ESC or 'q' : Quit"),
-            ListItem::new("Spacebar   : Play/Pause"),
+            ListItem::new("SPACE      : Play/Pause"),
             ListItem::new("Right →    : Next gen (if PAUSED)"),
             ListItem::new("Click      : Toggle cell at position"),
             ListItem::new("Alt-Click  : Add shape at position"),
             ListItem::new("TAB or 's' : Change shape selection"),
+            ListItem::new("'r'        : Randomize"),
+            ListItem::new("'c'        : Clear"),
+            ListItem::new("ESC or 'q' : Quit"),
         ]);
 
         GolUi {
@@ -160,7 +162,7 @@ impl Widget for ControlToggle {
             .into_iter()
             .for_each(|pos| cells[pos.row][pos.column + 4] = Cell::Alive);
 
-        for x in 12..42 {
+        for x in 18..36 {
             for y in 0..area.height {
                 if x % 2 == 0 {
                     buf.get_mut(area.left() + x, area.top() + y)
@@ -220,15 +222,23 @@ impl Widget for Board {
 impl Widget for Shape {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let mut cells = vec![vec![Cell::Dead; area.width as usize]; area.height as usize];
+        let mut max_column = 0;
         for pos in self.pattern {
-            cells[pos.row + 1][pos.column + 6] = Cell::Alive;
+            cells[pos.row + 1][pos.column + 1] = Cell::Alive;
+            if pos.column > max_column {
+                max_column = pos.column;
+            }
         }
 
-        for x in 10..(area.width - 14) {
+        let shape_width = max_column as u16;
+        let display_width = (shape_width + 3) * 2;
+        let margin = (area.width - display_width) / 2;
+
+        for x in margin..(margin + display_width) {
             for y in 0..area.height {
                 if x % 2 == 0 {
                     buf.get_mut(area.left() + x, area.top() + y)
-                        .clone_from(&cells[y as usize][((x - 6) / 2) as usize].into());
+                        .clone_from(&cells[y as usize][((x - margin) / 2) as usize].into());
                 } else {
                     buf.get_mut(area.left() + x, area.top() + y)
                         .set_symbol(tui::symbols::line::VERTICAL)

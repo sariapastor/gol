@@ -62,6 +62,16 @@ pub fn process_input(user_event: Event, game: &mut GolState) -> Result<(), ()> {
             }
             Ok(())
         }
+        Event::Key(KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }) => Ok(game.game_board.clear()),
+        Event::Key(KeyEvent {
+            code: KeyCode::Char('r'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }) => Ok(game.game_board.randomize()),
         _ => Ok(()),
     }
 }

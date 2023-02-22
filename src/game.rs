@@ -1,3 +1,4 @@
+use rand::random;
 use tui::{self, buffer, layout::Rect};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -12,6 +13,17 @@ impl Cell {
             Cell::Alive => Cell::Dead,
             Cell::Dead => Cell::Alive,
         }
+    }
+
+    fn randomize(&mut self) {
+        *self = match random::<bool>() {
+            true => Cell::Alive,
+            false => Cell::Dead,
+        }
+    }
+
+    fn clear(&mut self) {
+        *self = Cell::Dead
     }
 }
 
@@ -53,6 +65,11 @@ impl Shape {
     pub const GLIDER: [(usize, usize); 5] = [(0, 2), (1, 0), (1, 2), (2, 1), (2, 2)];
     pub const ACORN: [(usize, usize); 7] = [(0, 1), (1, 3), (2, 0), (2, 1), (2, 4), (2, 5), (2, 6)];
     pub const R_PENTOMINO: [(usize, usize); 5] = [(0, 1), (0, 2), (1, 0), (1, 1), (2, 1)];
+    pub const PI_HEPTOMINO: [(usize, usize); 7] =
+        [(0, 0), (0, 1), (0, 2), (1, 0), (1, 2), (2, 0), (2, 2)];
+    pub const B_HEPTOMINO: [(usize, usize); 7] =
+        [(0, 0), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (2, 1)];
+    pub const THUNDERBIRD: [(usize, usize); 6] = [(0, 0), (0, 1), (0, 2), (2, 1), (3, 1), (4, 1)];
 
     pub fn new(cells: Vec<(usize, usize)>, offset: Option<Position>) -> Self {
         let pattern = cells.into_iter().map(|t| t.into()).collect();
@@ -85,13 +102,13 @@ impl Board {
         width: u16,
         height: u16,
         init: Option<Vec<(usize, usize)>>,
-        arg_offset: usize,
+        arg_offset: f32,
     ) -> Self {
         let offset: Option<Position> = match arg_offset {
-            0 => None,
+            _ if arg_offset == 0.0 => None,
             offset => {
-                let offset_row = offset % height as usize;
-                let offset_col = offset % width as usize;
+                let offset_row = (((offset / 100.0) * height as f32) as u16 % height - 2) as usize;
+                let offset_col = (((offset / 100.0) * width as f32) as u16 % width - 2) as usize;
                 Some((offset_row, offset_col).into())
             }
         };
@@ -115,17 +132,42 @@ impl Board {
     fn count_living_neighbors(&self, pos: Position) -> u8 {
         let mut count = 0;
 
-        [self.height - 1, 0, 1].iter().for_each(|dr| {
-            let neighbor_row = (pos.row + *dr as usize) % self.height as usize;
-            [self.width - 1, 0, 1].iter().for_each(|dc| {
-                let neighbor_column = (pos.column + *dc as usize) % self.width as usize;
-                if self.cells[neighbor_row][neighbor_column] == Cell::Alive
-                    && (neighbor_row, neighbor_column) != (pos.row, pos.column)
-                {
-                    count += 1
-                }
-            })
-        });
+        let row_up = if pos.row != 0 {
+            pos.row - 1
+        } else {
+            self.height as usize - 1
+        };
+        let row_down = if pos.row != self.height as usize - 1 {
+            pos.row + 1
+        } else {
+            0
+        };
+        let left_column = if pos.column != 0 {
+            pos.column - 1
+        } else {
+            self.width as usize - 1
+        };
+        let right_column = if pos.column != self.width as usize - 1 {
+            pos.column + 1
+        } else {
+            0
+        };
+        let neighbors = [
+            (row_up, left_column),
+            (row_up, pos.column),
+            (row_up, right_column),
+            (pos.row, left_column),
+            (pos.row, right_column),
+            (row_down, left_column),
+            (row_down, pos.column),
+            (row_down, right_column),
+        ];
+
+        for (neighbor_row, neighbor_column) in neighbors {
+            if self.cells[neighbor_row][neighbor_column] == Cell::Alive {
+                count += 1
+            }
+        }
         count
     }
 
@@ -156,6 +198,22 @@ impl Board {
             .for_each(|p| self.cells[p.row][p.column] = Cell::Alive);
     }
 
+    pub fn randomize(&mut self) {
+        for row in &mut self.cells {
+            for cell in row {
+                cell.randomize();
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        for row in &mut self.cells {
+            for cell in row {
+                cell.clear();
+            }
+        }
+    }
+
     pub fn tick(&mut self) {
         let mut new_cells = self.cells.clone();
 
@@ -181,7 +239,7 @@ pub struct GolState {
     pub game_board: Board,
     pub paused: bool,
     pub term_rect: Rect,
-    shape_presets: [Shape; 3],
+    shape_presets: [Shape; 6],
     preset_index: usize,
 }
 
@@ -193,6 +251,9 @@ impl GolState {
             Shape::new(Shape::ACORN.to_vec(), None),
             Shape::new(Shape::GLIDER.to_vec(), None),
             Shape::new(Shape::R_PENTOMINO.to_vec(), None),
+            Shape::new(Shape::PI_HEPTOMINO.to_vec(), None),
+            Shape::new(Shape::B_HEPTOMINO.to_vec(), None),
+            Shape::new(Shape::THUNDERBIRD.to_vec(), None),
         ];
         GolState {
             game_board,
@@ -222,12 +283,12 @@ mod test {
 
     fn input_shape() -> Board {
         let shape = vec![(1, 2), (2, 3), (3, 1), (3, 2), (3, 3)];
-        Board::new(6, 6, Some(shape), 0)
+        Board::new(6, 6, Some(shape), 0.0)
     }
 
     fn expected_shape() -> Board {
         let shape = vec![(2, 1), (2, 3), (3, 2), (3, 3), (4, 2)];
-        Board::new(6, 6, Some(shape), 0)
+        Board::new(6, 6, Some(shape), 0.0)
     }
 
     #[test]

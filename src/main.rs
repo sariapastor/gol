@@ -9,7 +9,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use game::{Board, GolState, Shape};
-use std::{io, sync::mpsc::channel, thread, time::Duration};
+use std::{io, sync::mpsc::channel, thread};
 use tui::{backend::CrosstermBackend, Terminal};
 use ui::{ControlToggle, GolUi};
 
@@ -19,10 +19,10 @@ struct Args {
     rows: u16,
     #[arg(short, long, default_value_t = 64)]
     columns: u16,
-    #[arg(short, long, default_value_t = String::from("rpentomino"))]
+    #[arg(short, long, default_value_t = String::from("thunderbird"))]
     shape: String,
-    #[arg(short, long, default_value_t = 10)]
-    offset: usize,
+    #[arg(short, long, default_value_t = 50.0)]
+    offset: f32,
 }
 
 fn main() -> Result<(), io::Error> {
@@ -33,6 +33,9 @@ fn main() -> Result<(), io::Error> {
         "acorn" => Some(Shape::ACORN.to_vec()),
         "glider" => Some(Shape::GLIDER.to_vec()),
         "rpentomino" => Some(Shape::R_PENTOMINO.to_vec()),
+        "thunderbird" => Some(Shape::THUNDERBIRD.to_vec()),
+        "piheptomino" => Some(Shape::PI_HEPTOMINO.to_vec()),
+        "bheptomino" => Some(Shape::B_HEPTOMINO.to_vec()),
         _ => None,
     };
     let board = Board::new(args.columns, args.rows, init, args.offset);
@@ -40,11 +43,9 @@ fn main() -> Result<(), io::Error> {
     // listen for user input
     let (tx, rx) = channel::<Event>();
 
-    thread::spawn(move || loop {
-        if event::poll(Duration::from_millis(500)).unwrap_or(false) {
-            let _ = tx.send(
-                event::read().expect("Should have been an event to read since poll returned true."),
-            );
+    thread::spawn(move || -> crossterm::Result<bool> {
+        loop {
+            let _ = tx.send(event::read()?);
         }
     });
 
@@ -59,6 +60,7 @@ fn main() -> Result<(), io::Error> {
     let term_rect = terminal.size().expect("Error getting terminal dimensions");
     let mut game_state = GolState::new(board, term_rect);
 
+    // draw loop
     loop {
         if let Ok(user_event) = rx.try_recv() {
             if input::process_input(user_event, &mut game_state).is_err() {
@@ -72,11 +74,7 @@ fn main() -> Result<(), io::Error> {
                 frame.render_widget(layout.controls_border, layout.controls_row);
                 frame.render_widget(board, layout.game_area);
                 frame.render_widget(layout.controls_list, layout.controls_list_area);
-                frame.render_widget(
-                    // shape_presets[preset_index].clone(),
-                    game_state.current_preset(),
-                    layout.shape_display_area,
-                );
+                frame.render_widget(game_state.current_preset(), layout.shape_display_area);
                 frame.render_widget(
                     match game_state.paused {
                         true => ControlToggle::Play,
@@ -88,7 +86,7 @@ fn main() -> Result<(), io::Error> {
             if !game_state.paused {
                 game_state.game_board.tick();
             }
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            std::thread::sleep(std::time::Duration::from_millis(50)); // redraw @ ~15 fps
         }
     }
 
