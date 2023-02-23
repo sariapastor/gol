@@ -13,7 +13,7 @@ pub struct GolUi<'a> {
     pub controls_row: Rect,
     pub controls_list_area: Rect,
     pub shape_display_area: Rect,
-    pub controls_toggle_area: Rect,
+    pub playpause_toggle_area: Rect,
     pub screen_border: Block<'a>,
     pub controls_border: Block<'a>,
     pub controls_list: List<'a>,
@@ -30,13 +30,18 @@ impl GolUi<'_> {
                 .as_ref(),
             )
             .split(term_size);
+        let board_margin_width = if term_size.width > game_board.width * 2 {
+            (term_size.width - (game_board.width * 2)) / 2
+        } else {
+            0
+        };
 
         let game_row_columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(((term_size.width - (game_board.width * 2)) / 2) + 1),
+                Constraint::Length(board_margin_width),
                 Constraint::Length(game_board.width * 2 + 2),
-                Constraint::Length(((term_size.width - (game_board.width * 2)) / 2) - 3),
+                Constraint::Length(board_margin_width),
             ])
             .vertical_margin(Board::GAME_BOARD_TOP)
             .split(screen_rows[0]);
@@ -53,25 +58,25 @@ impl GolUi<'_> {
 
         let controls_main_column_rows = Layout::default()
             .constraints([
-                Constraint::Min(1),
-                Constraint::Length(8),
+                Constraint::Length(2),
+                Constraint::Length(7),
                 Constraint::Min(1),
             ])
             .split(controls_row_columns[1]);
 
         let controls_left_column_rows = Layout::default()
             .constraints([
-                Constraint::Min(2),
-                Constraint::Length(6),
-                Constraint::Min(2),
+                Constraint::Length(2),
+                Constraint::Length(7),
+                Constraint::Min(1),
             ])
             .split(controls_row_columns[0]);
 
         let controls_right_column_rows = Layout::default()
             .constraints([
-                Constraint::Min(2),
-                Constraint::Length(6),
-                Constraint::Min(2),
+                Constraint::Length(2),
+                Constraint::Length(7),
+                Constraint::Min(1),
             ])
             .split(controls_row_columns[2]);
 
@@ -90,10 +95,9 @@ impl GolUi<'_> {
             ListItem::new("Right →    : Next gen (if PAUSED)"),
             ListItem::new("Click      : Toggle cell at position"),
             ListItem::new("Alt-Click  : Add shape at position"),
-            ListItem::new("TAB or 's' : Change shape selection"),
-            ListItem::new("'r'        : Randomize"),
-            ListItem::new("'c'        : Clear"),
-            ListItem::new("ESC or 'q' : Quit"),
+            ListItem::new("TAB        : Change shape selection"),
+            ListItem::new("'C' / 'R'  : Clear / Randomize"),
+            ListItem::new("ESC or 'Q' : Quit"),
         ]);
 
         GolUi {
@@ -102,7 +106,7 @@ impl GolUi<'_> {
             controls_row: screen_rows[1],
             controls_list_area: controls_main_column_rows[1],
             shape_display_area: controls_left_column_rows[1],
-            controls_toggle_area: controls_right_column_rows[1],
+            playpause_toggle_area: controls_right_column_rows[1],
             screen_border,
             controls_border,
             controls_list,
@@ -116,57 +120,74 @@ pub enum ControlToggle {
 }
 
 impl ControlToggle {
-    const PLAY: [(usize, usize); 12] = [
+    const PLAYPAUSE: [(usize, usize); 36] = [
+        (0, 0),
+        (1, 0),
+        (2, 0),
+        (3, 0),
+        (4, 0),
+        (5, 0),
+        (6, 0),
+        (0, 1),
+        (6, 1),
         (0, 2),
         (1, 2),
-        (1, 3),
-        (2, 2),
-        (2, 3),
-        (2, 4),
-        (3, 2),
-        (3, 3),
-        (3, 4),
-        (4, 2),
-        (4, 3),
         (5, 2),
-    ];
-    const PAUSE: [(usize, usize); 16] = [
-        (1, 1),
-        (1, 2),
+        (6, 2),
+        (0, 3),
+        (1, 3),
+        (2, 3),
+        (4, 3),
+        (5, 3),
+        (6, 3),
+        (0, 4),
         (1, 4),
-        (1, 5),
-        (2, 1),
-        (2, 2),
         (2, 4),
-        (2, 5),
-        (3, 1),
-        (3, 2),
         (3, 4),
-        (3, 5),
-        (4, 1),
-        (4, 2),
         (4, 4),
-        (4, 5),
+        (5, 4),
+        (6, 4),
+        (1, 6),
+        (2, 6),
+        (3, 6),
+        (4, 6),
+        (5, 6),
+        (1, 8),
+        (2, 8),
+        (3, 8),
+        (4, 8),
+        (5, 8),
     ];
 }
 
 impl Widget for ControlToggle {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let shape = match self {
-            ControlToggle::Play => Shape::new(ControlToggle::PLAY.to_vec(), None),
-            ControlToggle::Pause => Shape::new(ControlToggle::PAUSE.to_vec(), None),
+        let shape = Shape::new(ControlToggle::PLAYPAUSE.to_vec(), None);
+        let width = if area.width > 10 { area.width } else { 10 };
+        let height = if area.height > 7 { area.height } else { 7 };
+        let mut cells = match self {
+            ControlToggle::Play => vec![vec![Cell::Dead; width as usize]; height as usize],
+            ControlToggle::Pause => vec![vec![Cell::Alive; width as usize]; height as usize],
         };
-        let mut cells = vec![vec![Cell::Dead; area.width as usize]; area.height as usize];
-        shape
-            .pattern
-            .into_iter()
-            .for_each(|pos| cells[pos.row][pos.column + 4] = Cell::Alive);
 
-        for x in 18..36 {
-            for y in 0..area.height {
+        shape.pattern.into_iter().for_each(|pos| {
+            cells[pos.row][pos.column] = match self {
+                ControlToggle::Pause => Cell::Dead,
+                ControlToggle::Play => Cell::Alive,
+            }
+        });
+        let draw_width = if area.width < 20 { area.width } else { 20 };
+        let margin = if width > draw_width {
+            (width - draw_width) / 2 - 2
+        } else {
+            0
+        };
+        let draw_height = if area.height < 7 { area.height } else { 7 };
+        for x in margin..(margin + draw_width) {
+            for y in 0..draw_height {
                 if x % 2 == 0 {
                     buf.get_mut(area.left() + x, area.top() + y)
-                        .clone_from(&cells[y as usize][((x - 12) / 2) as usize].into());
+                        .clone_from(&cells[y as usize][((x - margin) / 2) as usize].into());
                 } else {
                     buf.get_mut(area.left() + x, area.top() + y)
                         .set_symbol(tui::symbols::line::VERTICAL)
@@ -200,8 +221,18 @@ impl Widget for Board {
             })
             .collect();
 
-        for x in 0..(self.width * 2) {
-            for y in 0..self.height {
+        let draw_width = if area.width < self.width * 2 {
+            area.width
+        } else {
+            self.width * 2
+        };
+        let draw_height = if area.height < self.height {
+            area.height
+        } else {
+            self.height
+        };
+        for x in 0..draw_width {
+            for y in 0..draw_height {
                 if x % 2 == 0 {
                     buf.get_mut(area.left() + x, area.top() + y)
                         .clone_from(&content_cells[y as usize][(x / 2) as usize]);
@@ -221,21 +252,37 @@ impl Widget for Board {
 
 impl Widget for Shape {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let mut cells = vec![vec![Cell::Dead; area.width as usize]; area.height as usize];
+        let width = if area.width > 9 { area.width } else { 9 };
+        let height = if area.height > 6 { area.height } else { 6 };
+        let mut cells = vec![vec![Cell::Dead; width as usize]; height as usize];
+
         let mut max_column = 0;
         for pos in self.pattern {
-            cells[pos.row + 1][pos.column + 1] = Cell::Alive;
+            cells[pos.row + 2][pos.column + 1] = Cell::Alive;
             if pos.column > max_column {
                 max_column = pos.column;
             }
         }
 
         let shape_width = max_column as u16;
-        let display_width = (shape_width + 3) * 2;
-        let margin = (area.width - display_width) / 2;
+        let draw_width = if area.width > (shape_width + 3) * 2 {
+            (shape_width + 3) * 2
+        } else {
+            area.width
+        };
+        let margin = if width > draw_width {
+            (width - draw_width) / 2
+        } else {
+            0
+        };
+        let draw_height = if area.height < height {
+            area.height
+        } else {
+            height
+        };
 
-        for x in margin..(margin + display_width) {
-            for y in 0..area.height {
+        for x in margin..(margin + draw_width) {
+            for y in 0..draw_height {
                 if x % 2 == 0 {
                     buf.get_mut(area.left() + x, area.top() + y)
                         .clone_from(&cells[y as usize][((x - margin) / 2) as usize].into());

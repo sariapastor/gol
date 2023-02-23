@@ -21,12 +21,12 @@ struct Args {
     columns: u16,
     #[arg(short, long, default_value_t = String::from("thunderbird"))]
     shape: String,
-    #[arg(short, long, default_value_t = 50.0)]
+    #[arg(short, long, default_value_t = 50.0, help = "As percentage")]
     offset: f32,
 }
 
 fn main() -> Result<(), io::Error> {
-    // configure
+    // configure from provided args
     let args = Args::parse();
 
     let init = match args.shape.as_str() {
@@ -80,7 +80,7 @@ fn main() -> Result<(), io::Error> {
                         true => ControlToggle::Play,
                         false => ControlToggle::Pause,
                     },
-                    layout.controls_toggle_area,
+                    layout.playpause_toggle_area,
                 );
             })?;
             if !game_state.paused {
